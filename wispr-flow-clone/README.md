@@ -23,6 +23,17 @@ python flow.py
 
 Hold **F9**, speak, release it - the text is typed into the focused app.
 
+Or run it as a menu-bar/tray app instead of a terminal script:
+
+```bash
+python tray_app.py
+```
+
+This runs the exact same engine in the background with a tray icon that
+shows status at a glance (gray = idle, red = recording, orange =
+transcribing) plus a menu with the active settings and a Quit item. It
+takes the same flags as `flow.py` (`--hotkey`, `--model`, `--cleanup`, etc).
+
 Options:
 
 ```bash
@@ -70,7 +81,10 @@ is typed:
   the hotkey doesn't register in some apps.
 - **Linux**: works under X11. Wayland restricts global key listening and
   synthetic typing for security reasons, so `pynput` may not work there
-  without extra setup (e.g. running under XWayland or using `ydotool`).
+  without extra setup (e.g. running under XWayland or using `ydotool`). The
+  tray icon (`tray_app.py`) additionally needs a system tray/AppIndicator
+  implementation - e.g. `sudo apt install gir1.2-appindicator3-0.1` on
+  Ubuntu/GNOME - or it won't render.
 
 ## How it works
 
@@ -83,10 +97,13 @@ is typed:
 5. The cleaned text is typed into the focused window via `pynput`, or
    pasted via the clipboard with `--paste`.
 
+`tray_app.py` wraps the same `Dictation` class from `flow.py` with a
+`pystray` icon: the hotkey listener runs on a background thread while
+`pystray`'s event loop runs on the main thread (required on macOS), and a
+state-change callback repaints the icon on idle/recording/transcribing.
+
 ## Ideas for next steps
 
-- Package as a menu-bar/tray app (e.g. with `rumps` on macOS, `pystray`
-  cross-platform) instead of a terminal script.
 - Persist a dictation history.
 - Auto-select model size based on detected CPU/GPU.
 - Add a toggle mode (tap to start/stop) in addition to push-to-talk.

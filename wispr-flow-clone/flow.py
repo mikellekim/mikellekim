@@ -13,7 +13,7 @@ import os
 import platform
 import sys
 import threading
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -43,6 +43,7 @@ class Dictation:
         paste_mode: bool,
         cleanup_backend: str,
         ollama_model: str,
+        on_state_change: Optional[Callable[[str], None]] = None,
     ):
         print(f"Loading Whisper model '{model_size}' (first run downloads it)...")
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
@@ -52,6 +53,7 @@ class Dictation:
         self.cleanup_backend = cleanup_backend
         self.ollama_model = ollama_model
         self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+        self.on_state_change = on_state_change
         self.controller = keyboard.Controller()
 
         self._recording = False
@@ -60,6 +62,11 @@ class Dictation:
         self._lock = threading.Lock()
 
         print("Ready. Hold the hotkey to record, release to transcribe and type.")
+        self._set_state("idle")
+
+    def _set_state(self, state: str):
+        if self.on_state_change:
+            self.on_state_change(state)
 
     def _audio_callback(self, indata, frames, time_info, status):
         if status:
@@ -78,6 +85,7 @@ class Dictation:
         )
         self._stream.start()
         print("\n[recording]", end="", flush=True)
+        self._set_state("recording")
 
     def stop_recording_and_transcribe(self):
         with self._lock:
@@ -95,19 +103,23 @@ class Dictation:
 
         if not frames:
             print(" (nothing captured)")
+            self._set_state("idle")
             return
 
         audio = np.concatenate(frames, axis=0).flatten()
         duration = len(audio) / SAMPLE_RATE
         if duration < MIN_DURATION_SECONDS:
             print(" (too short, ignored)")
+            self._set_state("idle")
             return
 
         print(f" transcribing {duration:.1f}s...", end="", flush=True)
+        self._set_state("transcribing")
         segments, _ = self.model.transcribe(audio, language=self.language, beam_size=5)
         raw_text = "".join(segment.text for segment in segments).strip()
         if not raw_text:
             print(" (empty)")
+            self._set_state("idle")
             return
         print(f" -> {raw_text!r}", end="")
 
@@ -121,6 +133,7 @@ class Dictation:
 
         if text:
             self._emit(text)
+        self._set_state("idle")
 
     def _emit(self, text: str):
         if self.paste_mode:
