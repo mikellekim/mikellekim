@@ -13,6 +13,7 @@ import os
 import platform
 import sys
 import threading
+from pathlib import Path
 from typing import Callable, List, Optional
 
 import numpy as np
@@ -20,6 +21,7 @@ import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
 
+import history
 from cleanup import cleanup_text
 
 SAMPLE_RATE = 16000
@@ -44,6 +46,8 @@ class Dictation:
         cleanup_backend: str,
         ollama_model: str,
         on_state_change: Optional[Callable[[str], None]] = None,
+        history_enabled: bool = True,
+        history_path: Optional[Path] = None,
     ):
         print(f"Loading Whisper model '{model_size}' (first run downloads it)...")
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
@@ -54,6 +58,8 @@ class Dictation:
         self.ollama_model = ollama_model
         self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
         self.on_state_change = on_state_change
+        self.history_enabled = history_enabled
+        self.history_path = history_path or history.DEFAULT_HISTORY_PATH
         self.controller = keyboard.Controller()
 
         self._recording = False
@@ -131,6 +137,9 @@ class Dictation:
         )
         print(f" | cleaned -> {text!r}" if text != raw_text else "")
 
+        if self.history_enabled:
+            history.append_entry(raw_text, text, duration, self.cleanup_backend, path=self.history_path)
+
         if text:
             self._emit(text)
         self._set_state("idle")
@@ -190,6 +199,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="llama3.2:1b",
         help="model to use with --cleanup ollama (default: llama3.2:1b)",
     )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help=f"don't log transcriptions to the history file (default: {history.DEFAULT_HISTORY_PATH})",
+    )
+    parser.add_argument(
+        "--history-path",
+        default=None,
+        help="override the history log file location",
+    )
     return parser
 
 
@@ -201,7 +220,14 @@ def main():
     args = parse_args()
     hotkey = KEY_ALIASES[args.hotkey]
     dictation = Dictation(
-        args.model, hotkey, args.language, args.paste, args.cleanup, args.ollama_model
+        args.model,
+        hotkey,
+        args.language,
+        args.paste,
+        args.cleanup,
+        args.ollama_model,
+        history_enabled=not args.no_history,
+        history_path=Path(args.history_path) if args.history_path else None,
     )
 
     with keyboard.Listener(on_press=dictation.on_press, on_release=dictation.on_release) as listener:

@@ -96,6 +96,30 @@ Implementation is native per OS - no extra background service:
 - **Windows**: a value under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
 - **Linux**: an XDG autostart file at `~/.config/autostart/wispr-flow-clone.desktop`.
 
+## History log
+
+Every transcription (both the raw Whisper output and the cleaned-up text)
+is appended to a local log at `~/.wispr-flow-clone/history.jsonl` - one
+JSON object per line, timestamped, nothing sent anywhere.
+
+Browse it with `history.py`:
+
+```bash
+python history.py                # last 20 entries
+python history.py --limit 100
+python history.py --search budget
+python history.py --clear        # delete the log
+```
+
+From the tray app, "Open History Log" opens the file directly in your
+default text editor. Disable logging entirely with `--no-history`, or
+point it elsewhere with `--history-path /some/path.jsonl`:
+
+```bash
+python flow.py --no-history
+python tray_app.py --history-path ~/Documents/dictation.jsonl
+```
+
 ## Platform notes
 
 - **macOS**: grant your terminal (or the packaged app, if you build one)
@@ -118,7 +142,9 @@ Implementation is native per OS - no extra background service:
    model (no ffmpeg/file round-trip needed).
 4. The raw transcript is run through the configured `--cleanup` backend
    (see above) to strip filler words and fix punctuation.
-5. The cleaned text is typed into the focused window via `pynput`, or
+5. Both the raw and cleaned text are appended to the history log (see
+   above), unless `--no-history` is set.
+6. The cleaned text is typed into the focused window via `pynput`, or
    pasted via the clipboard with `--paste`.
 
 `tray_app.py` wraps the same `Dictation` class from `flow.py` with a
@@ -128,7 +154,6 @@ state-change callback repaints the icon on idle/recording/transcribing.
 
 ## Ideas for next steps
 
-- Persist a dictation history.
 - Add a small settings UI instead of flag-only configuration.
 - Auto-select model size based on detected CPU/GPU.
 - Add a toggle mode (tap to start/stop) in addition to push-to-talk.

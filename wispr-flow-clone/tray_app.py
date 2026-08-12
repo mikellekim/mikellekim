@@ -12,12 +12,14 @@ Accepts the same flags as flow.py, e.g.:
 """
 
 import sys
+from pathlib import Path
 
 import pystray
 from PIL import Image, ImageDraw
 from pynput import keyboard
 
 import autostart
+import history
 from flow import Dictation, KEY_ALIASES
 from flow import build_arg_parser as build_flow_arg_parser
 
@@ -58,6 +60,8 @@ class TrayApp:
             args.cleanup,
             args.ollama_model,
             on_state_change=self._on_state_change,
+            history_enabled=not args.no_history,
+            history_path=Path(args.history_path) if args.history_path else None,
         )
         self.icon = pystray.Icon(
             name="wispr-flow-clone",
@@ -75,6 +79,7 @@ class TrayApp:
             pystray.MenuItem(
                 "Launch at Login", self._toggle_autostart, checked=lambda item: autostart.is_enabled()
             ),
+            pystray.MenuItem("Open History Log", self._open_history, enabled=self.dictation.history_enabled),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._quit),
         )
@@ -84,6 +89,9 @@ class TrayApp:
             autostart.disable()
         else:
             autostart.enable(_persisted_args())
+
+    def _open_history(self, icon, item):
+        history.open_in_default_app(self.dictation.history_path)
 
     def _on_state_change(self, state: str):
         self.icon.icon = make_icon_image(STATE_COLORS.get(state, STATE_COLORS["idle"]))
