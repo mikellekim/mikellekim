@@ -28,6 +28,8 @@ Options:
 ```bash
 python flow.py --hotkey right_ctrl --model small --language en
 python flow.py --paste   # paste via clipboard instead of simulated typing
+python flow.py --cleanup ollama --ollama-model llama3.2:1b
+python flow.py --cleanup anthropic   # needs ANTHROPIC_API_KEY set
 ```
 
 - `--model`: `tiny` / `base` / `small` / `medium` / `large-v3`. Bigger models
@@ -37,6 +39,27 @@ python flow.py --paste   # paste via clipboard instead of simulated typing
 - `--paste`: uses your clipboard + Cmd/Ctrl+V instead of typing each
   character - faster for long text but temporarily overwrites your
   clipboard.
+
+## Cleanup pass
+
+Whisper's raw output keeps every "um", stutter, and spoken-out punctuation
+("period", "new line"). `--cleanup` runs a pass to fix that before the text
+is typed:
+
+- `rules` (default) - free, local, zero setup. A regex pass that strips
+  filler words (um, uh, you know, kind of, ...), collapses stutters,
+  converts spoken punctuation to real punctuation, and fixes capitalization.
+  Always available, and the automatic fallback for the other two backends.
+- `ollama` - routes the transcript through a local LLM via a running
+  [Ollama](https://ollama.com) server for smarter cleanup (better at
+  judgment calls like restructuring a rambling sentence). Free and private,
+  but needs Ollama installed and a model pulled, e.g. `ollama pull
+  llama3.2:1b`. Falls back to `rules` if the server isn't reachable.
+- `anthropic` - routes the transcript through the Anthropic API for the
+  highest-quality cleanup. Requires `ANTHROPIC_API_KEY` and costs a small
+  amount per call. Falls back to `rules` if the key is missing or the call
+  fails.
+- `raw` - skip cleanup entirely, type exactly what Whisper produced.
 
 ## Platform notes
 
@@ -55,15 +78,15 @@ python flow.py --paste   # paste via clipboard instead of simulated typing
 2. While held, `sounddevice` records mono 16kHz audio from your default mic.
 3. On release, the audio buffer is fed straight to a local `faster-whisper`
    model (no ffmpeg/file round-trip needed).
-4. The resulting text is typed into the focused window via `pynput`, or
+4. The raw transcript is run through the configured `--cleanup` backend
+   (see above) to strip filler words and fix punctuation.
+5. The cleaned text is typed into the focused window via `pynput`, or
    pasted via the clipboard with `--paste`.
 
 ## Ideas for next steps
 
 - Package as a menu-bar/tray app (e.g. with `rumps` on macOS, `pystray`
   cross-platform) instead of a terminal script.
-- Add an LLM cleanup pass (filler-word removal, punctuation, formatting)
-  using a local model or an API key you provide.
 - Persist a dictation history.
 - Auto-select model size based on detected CPU/GPU.
 - Add a toggle mode (tap to start/stop) in addition to push-to-talk.

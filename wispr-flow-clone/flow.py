@@ -9,6 +9,7 @@ audio leaving your machine (after the one-time model download).
 """
 
 import argparse
+import os
 import platform
 import sys
 import threading
@@ -18,6 +19,8 @@ import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
+
+from cleanup import cleanup_text
 
 SAMPLE_RATE = 16000
 MIN_DURATION_SECONDS = 0.3
@@ -32,12 +35,23 @@ KEY_ALIASES = {
 
 
 class Dictation:
-    def __init__(self, model_size: str, hotkey: keyboard.Key, language: Optional[str], paste_mode: bool):
+    def __init__(
+        self,
+        model_size: str,
+        hotkey: keyboard.Key,
+        language: Optional[str],
+        paste_mode: bool,
+        cleanup_backend: str,
+        ollama_model: str,
+    ):
         print(f"Loading Whisper model '{model_size}' (first run downloads it)...")
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
         self.hotkey = hotkey
         self.language = language
         self.paste_mode = paste_mode
+        self.cleanup_backend = cleanup_backend
+        self.ollama_model = ollama_model
+        self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
         self.controller = keyboard.Controller()
 
         self._recording = False
@@ -91,8 +105,19 @@ class Dictation:
 
         print(f" transcribing {duration:.1f}s...", end="", flush=True)
         segments, _ = self.model.transcribe(audio, language=self.language, beam_size=5)
-        text = "".join(segment.text for segment in segments).strip()
-        print(f" -> {text!r}")
+        raw_text = "".join(segment.text for segment in segments).strip()
+        if not raw_text:
+            print(" (empty)")
+            return
+        print(f" -> {raw_text!r}", end="")
+
+        text = cleanup_text(
+            raw_text,
+            self.cleanup_backend,
+            ollama_model=self.ollama_model,
+            anthropic_api_key=self.anthropic_api_key,
+        )
+        print(f" | cleaned -> {text!r}" if text != raw_text else "")
 
         if text:
             self._emit(text)
@@ -136,13 +161,31 @@ def parse_args():
         action="store_true",
         help="paste via clipboard (Cmd/Ctrl+V) instead of typing character-by-character",
     )
+    parser.add_argument(
+        "--cleanup",
+        default="rules",
+        choices=["raw", "rules", "ollama", "anthropic"],
+        help=(
+            "cleanup pass for filler words and punctuation (default: rules - free, local, "
+            "no setup). 'ollama' uses a local LLM via a running Ollama server; 'anthropic' "
+            "uses the Anthropic API (needs ANTHROPIC_API_KEY, costs money per call); 'raw' "
+            "skips cleanup entirely. Both LLM backends fall back to 'rules' if unreachable."
+        ),
+    )
+    parser.add_argument(
+        "--ollama-model",
+        default="llama3.2:1b",
+        help="model to use with --cleanup ollama (default: llama3.2:1b)",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     hotkey = KEY_ALIASES[args.hotkey]
-    dictation = Dictation(args.model, hotkey, args.language, args.paste)
+    dictation = Dictation(
+        args.model, hotkey, args.language, args.paste, args.cleanup, args.ollama_model
+    )
 
     with keyboard.Listener(on_press=dictation.on_press, on_release=dictation.on_release) as listener:
         listener.join()
