@@ -72,6 +72,30 @@ is typed:
   fails.
 - `raw` - skip cleanup entirely, type exactly what Whisper produced.
 
+## Launch at login
+
+`tray_app.py` can register itself to start automatically when you log in,
+so it behaves like a real background app instead of something you have to
+remember to launch:
+
+```bash
+python tray_app.py --enable-autostart              # registers with current flags
+python tray_app.py --model small --enable-autostart # e.g. with the small model
+python tray_app.py --disable-autostart
+python tray_app.py --autostart-status
+```
+
+Whatever flags you pass alongside `--enable-autostart` (hotkey, model,
+cleanup backend, ...) are what gets re-run at login. You can also toggle it
+from the tray icon's "Launch at Login" menu item at any time, which reuses
+the flags the running instance was started with.
+
+Implementation is native per OS - no extra background service:
+
+- **macOS**: a LaunchAgent plist at `~/Library/LaunchAgents/com.wispr-flow-clone.plist`.
+- **Windows**: a value under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+- **Linux**: an XDG autostart file at `~/.config/autostart/wispr-flow-clone.desktop`.
+
 ## Platform notes
 
 - **macOS**: grant your terminal (or the packaged app, if you build one)
@@ -105,5 +129,6 @@ state-change callback repaints the icon on idle/recording/transcribing.
 ## Ideas for next steps
 
 - Persist a dictation history.
+- Add a small settings UI instead of flag-only configuration.
 - Auto-select model size based on detected CPU/GPU.
 - Add a toggle mode (tap to start/stop) in addition to push-to-talk.

@@ -156,7 +156,7 @@ class Dictation:
             self.stop_recording_and_transcribe()
 
 
-def parse_args():
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--hotkey", default="f9", choices=sorted(KEY_ALIASES), help="push-to-talk key (default: f9)"
@@ -190,7 +190,11 @@ def parse_args():
         default="llama3.2:1b",
         help="model to use with --cleanup ollama (default: llama3.2:1b)",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args():
+    return build_arg_parser().parse_args()
 
 
 def main():
