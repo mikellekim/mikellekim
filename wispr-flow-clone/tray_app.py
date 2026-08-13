@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""
+Menu-bar / system-tray wrapper around flow.py's push-to-talk dictation.
+
+Runs the same local, free dictation engine in the background and shows a
+tray icon that reflects status (idle / recording / transcribing), with a
+menu showing the active hotkey/model/cleanup settings and a Quit item.
+
+Accepts the same flags as flow.py, e.g.:
+
+    python tray_app.py --hotkey right_ctrl --model small --cleanup ollama
+"""
+
+import sys
+from pathlib import Path
+
+import pystray
+from PIL import Image, ImageDraw
+from pynput import keyboard
+
+import autostart
+import history
+from flow import Dictation, KEY_ALIASES
+from flow import build_arg_parser as build_flow_arg_parser
+
+_AUTOSTART_MANAGEMENT_FLAGS = {"--enable-autostart", "--disable-autostart", "--autostart-status"}
+
+ICON_SIZE = 64
+ICON_BACKGROUND = (32, 32, 32)
+STATE_COLORS = {
+    "idle": (130, 130, 130),
+    "recording": (220, 50, 50),
+    "transcribing": (230, 160, 30),
+}
+
+
+def _persisted_args() -> list:
+    """The args this process was launched with, minus the autostart
+    management flags - what launch-at-login should re-run on login.
+    """
+    return [arg for arg in sys.argv[1:] if arg not in _AUTOSTART_MANAGEMENT_FLAGS]
+
+
+def make_icon_image(color) -> Image.Image:
+    # Opaque RGB, not transparent RGBA: testing found a transparent-background
+    # icon silently failed to render on Windows (no error, just invisible),
+    # while an opaque image - confirmed via a minimal pystray reproduction -
+    # displayed correctly.
+    image = Image.new("RGB", (ICON_SIZE, ICON_SIZE), ICON_BACKGROUND)
+    draw = ImageDraw.Draw(image)
+    margin = ICON_SIZE // 8
+    draw.ellipse((margin, margin, ICON_SIZE - margin, ICON_SIZE - margin), fill=color)
+    return image
+
+
+class TrayApp:
+    def __init__(self, args):
+        self.args = args
+        # Set once the native tray icon actually exists (inside the setup()
+        # callback passed to icon.run(), see run() below). Dictation fires
+        # an initial "idle" state-change synchronously during its own
+        # __init__, which is well before icon.run() is ever called - writing
+        # to self.icon.icon/.title at that point targets an icon that hasn't
+        # been created by the OS yet, which could easily leave it in a state
+        # that never actually renders once run() does start. _on_state_change
+        # uses this flag to skip updates until the icon is genuinely live.
+        self._icon_ready = False
+        # self.icon must exist before Dictation() is constructed: Dictation
+        # fires an initial "idle" state-change callback as the last step of
+        # its own __init__, and that callback (_on_state_change below)
+        # writes to self.icon. Building the icon first (and keeping
+        # _build_menu from touching self.dictation) avoids that ordering bug.
+        self.icon = pystray.Icon(
+            # Renamed from "wispr-flow-clone": real-world testing found
+            # Windows can leave a stale/zombie tray icon cache entry for a
+            # name whose owning process was killed abruptly (Ctrl+C never
+            # calls Shell_NotifyIcon(NIM_DELETE) to unregister it cleanly),
+            # which silently blocks that identity from ever rendering an
+            # icon again regardless of what the code does. A fresh, never-
+            # before-used name sidesteps any such poisoned cache entry.
+            name="wispr-flow-clone-tray",
+            icon=make_icon_image(STATE_COLORS["idle"]),
+            title="Dictation: idle",
+            menu=self._build_menu(),
+        )
+        hotkey = KEY_ALIASES[args.hotkey]
+        self.dictation = Dictation(
+            args.model,
+            hotkey,
+            args.language,
+            args.paste,
+            args.cleanup,
+            args.ollama_model,
+            on_state_change=self._on_state_change,
+            history_enabled=not args.no_history,
+            history_path=Path(args.history_path) if args.history_path else None,
+        )
+
+    def _build_menu(self) -> pystray.Menu:
+        return pystray.Menu(
+            pystray.MenuItem(f"Hotkey: {self.args.hotkey}", None, enabled=False),
+            pystray.MenuItem(f"Model: {self.args.model}", None, enabled=False),
+            pystray.MenuItem(f"Cleanup: {self.args.cleanup}", None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Launch at Login", self._toggle_autostart, checked=lambda item: autostart.is_enabled()
+            ),
+            pystray.MenuItem(
+                "Open History Log", self._open_history, enabled=not self.args.no_history
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit", self._quit),
+        )
+
+    def _toggle_autostart(self, icon, item):
+        if autostart.is_enabled():
+            autostart.disable()
+        else:
+            autostart.enable(_persisted_args())
+
+    def _open_history(self, icon, item):
+        history.open_in_default_app(self.dictation.history_path)
+
+    def _on_state_change(self, state: str):
+        if not self._icon_ready:
+            # Icon isn't actually running yet (see __init__); the image it
+            # was constructed with already reflects idle, so there's nothing
+            # to update, and updating now targets an icon that doesn't
+            # exist as far as the OS is concerned.
+            return
+        self.icon.icon = make_icon_image(STATE_COLORS.get(state, STATE_COLORS["idle"]))
+        self.icon.title = f"Dictation: {state}"
+
+    def _quit(self, icon, item):
+        icon.stop()
+
+    def run(self):
+        listener = keyboard.Listener(
+            on_press=self.dictation.on_press, on_release=self.dictation.on_release
+        )
+        listener.start()
+
+        def setup(icon):
+            # Some pystray backends don't reliably default to visible on
+            # their own - explicitly setting it is the documented-safe way
+            # to make sure the icon actually renders.
+            icon.visible = True
+            self._icon_ready = True
+            print("Tray icon should now be visible in the system tray.")
+
+        self.icon.run(setup=setup)  # blocks; must run on the main thread (required on macOS)
+
+
+def build_arg_parser():
+    parser = build_flow_arg_parser()
+    parser.add_argument(
+        "--enable-autostart",
+        action="store_true",
+        help="register this command (with its current flags) to launch at login, then exit",
+    )
+    parser.add_argument(
+        "--disable-autostart",
+        action="store_true",
+        help="remove the launch-at-login registration, then exit",
+    )
+    parser.add_argument(
+        "--autostart-status",
+        action="store_true",
+        help="print whether launch-at-login is currently enabled, then exit",
+    )
+    return parser
+
+
+def main():
+    args = build_arg_parser().parse_args()
+
+    if args.enable_autostart:
+        path = autostart.enable(_persisted_args())
+        print(f"Launch-at-login enabled -> {path}")
+        return
+    if args.disable_autostart:
+        autostart.disable()
+        print("Launch-at-login disabled")
+        return
+    if args.autostart_status:
+        print("enabled" if autostart.is_enabled() else "disabled")
+        return
+
+    TrayApp(args).run()
+
+
+if __name__ == "__main__":
+    main()
