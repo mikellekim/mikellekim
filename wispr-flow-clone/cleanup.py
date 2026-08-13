@@ -61,7 +61,11 @@ def rule_based_cleanup(text: str) -> str:
     cleaned = re.sub(r" *\n *", "\n", cleaned)
     cleaned = cleaned.strip()
 
-    if cleaned:
+    # Sentence-style capitalization/trailing punctuation only makes sense
+    # for actual sentences. A single unbroken token (a URL, a domain, a bare
+    # word) isn't one - forcing "www.example.com" to "Www.example.com." was
+    # a real bug found in testing.
+    if cleaned and " " in cleaned:
         cleaned = cleaned[0].upper() + cleaned[1:]
         if cleaned[-1] not in ".?!":
             cleaned += "."
