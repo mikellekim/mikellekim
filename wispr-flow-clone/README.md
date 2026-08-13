@@ -120,6 +120,17 @@ python flow.py --no-history
 python tray_app.py --history-path ~/Documents/dictation.jsonl
 ```
 
+## Whisper hallucinations
+
+On quiet or ambiguous audio, Whisper occasionally locks onto the wrong
+language and loops the same word or phrase (e.g. `"gydwchwb, gydwchwb,
+gydwchwb, gydwchwb"`) instead of transcribing silence or noise - a known
+failure mode of the underlying model, not specific to this project. When a
+transcript is dominated by one repeated word, it's treated as a likely
+hallucination and discarded (not typed, not logged) rather than dumped into
+whatever you were typing into. If you hit this often, try `--language en`
+(skips language auto-detection, the usual trigger) or a larger `--model`.
+
 ## Platform notes
 
 - **macOS**: grant your terminal (or the packaged app, if you build one)

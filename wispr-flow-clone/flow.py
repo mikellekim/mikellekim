@@ -11,8 +11,10 @@ audio leaving your machine (after the one-time model download).
 import argparse
 import os
 import platform
+import re
 import sys
 import threading
+from collections import Counter
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -34,6 +36,22 @@ KEY_ALIASES = {
     "right_alt": keyboard.Key.alt_r,
     "pause": keyboard.Key.pause,
 }
+
+HALLUCINATION_MIN_WORDS = 4
+HALLUCINATION_REPEAT_RATIO = 0.4
+
+
+def is_likely_hallucination(text: str) -> bool:
+    """Whisper occasionally locks onto the wrong language on ambiguous or
+    quiet audio and loops the same word/phrase - a well-known failure mode,
+    not a bug in this project. Flag transcripts dominated by one repeated
+    word so they can be discarded instead of typed/logged as if real.
+    """
+    words = re.findall(r"[\w']+", text.lower())
+    if len(words) < HALLUCINATION_MIN_WORDS:
+        return False
+    _, count = Counter(words).most_common(1)[0]
+    return count >= 3 and count / len(words) >= HALLUCINATION_REPEAT_RATIO
 
 
 class Dictation:
@@ -125,6 +143,10 @@ class Dictation:
         raw_text = "".join(segment.text for segment in segments).strip()
         if not raw_text:
             print(" (empty)")
+            self._set_state("idle")
+            return
+        if is_likely_hallucination(raw_text):
+            print(f" -> {raw_text!r} (looks like a Whisper hallucination, discarded)")
             self._set_state("idle")
             return
         print(f" -> {raw_text!r}", end="")
