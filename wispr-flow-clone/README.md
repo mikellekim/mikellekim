@@ -34,6 +34,22 @@ shows status at a glance (gray = idle, red = recording, orange =
 transcribing) plus a menu with the active settings and a Quit item. It
 takes the same flags as `flow.py` (`--hotkey`, `--model`, `--cleanup`, etc).
 
+### Desktop shortcut (Windows)
+
+To avoid retyping the command every time, `start_tray.bat` launches the
+tray app with a fixed set of flags. Edit the `python tray_app.py ...` line
+inside it to change hotkey/model/cleanup, then make a one-click desktop
+launcher:
+
+1. Right-click `start_tray.bat` in File Explorer.
+2. **Send to** > **Desktop (create shortcut)**.
+3. Double-click the new desktop icon whenever you want to start it - no
+   Command Prompt typing needed.
+
+It still opens a console window so you can see the transcript/cleanup log
+like before; the window closes on its own only if you close it (a `pause`
+at the end keeps it open if something errors, so you can read why).
+
 Options:
 
 ```bash
