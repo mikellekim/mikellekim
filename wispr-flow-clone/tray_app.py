@@ -56,6 +56,15 @@ def make_icon_image(color) -> Image.Image:
 class TrayApp:
     def __init__(self, args):
         self.args = args
+        # Set once the native tray icon actually exists (inside the setup()
+        # callback passed to icon.run(), see run() below). Dictation fires
+        # an initial "idle" state-change synchronously during its own
+        # __init__, which is well before icon.run() is ever called - writing
+        # to self.icon.icon/.title at that point targets an icon that hasn't
+        # been created by the OS yet, which could easily leave it in a state
+        # that never actually renders once run() does start. _on_state_change
+        # uses this flag to skip updates until the icon is genuinely live.
+        self._icon_ready = False
         # self.icon must exist before Dictation() is constructed: Dictation
         # fires an initial "idle" state-change callback as the last step of
         # its own __init__, and that callback (_on_state_change below)
@@ -106,6 +115,12 @@ class TrayApp:
         history.open_in_default_app(self.dictation.history_path)
 
     def _on_state_change(self, state: str):
+        if not self._icon_ready:
+            # Icon isn't actually running yet (see __init__); the image it
+            # was constructed with already reflects idle, so there's nothing
+            # to update, and updating now targets an icon that doesn't
+            # exist as far as the OS is concerned.
+            return
         self.icon.icon = make_icon_image(STATE_COLORS.get(state, STATE_COLORS["idle"]))
         self.icon.title = f"Dictation: {state}"
 
@@ -123,6 +138,7 @@ class TrayApp:
             # their own - explicitly setting it is the documented-safe way
             # to make sure the icon actually renders.
             icon.visible = True
+            self._icon_ready = True
             print("Tray icon should now be visible in the system tray.")
 
         self.icon.run(setup=setup)  # blocks; must run on the main thread (required on macOS)
