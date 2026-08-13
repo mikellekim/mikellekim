@@ -159,6 +159,13 @@ whatever you were typing into. If you hit this often, try `--language en`
   Administrator") unless this script is also run elevated - that's
   Windows' own UIPI security boundary blocking lower-privilege processes
   from injecting input into higher-privilege windows, not a bug here.
+  If the tray icon ever stops appearing after repeatedly force-killing
+  `tray_app.py` (Ctrl+C, closing the console window, Task Manager) instead
+  of quitting it via its own "Quit" menu item: Windows can leave a stale
+  cached entry for that icon's identity that silently blocks it from
+  rendering again, even though nothing errors. Always prefer the tray
+  menu's Quit over force-killing the process, since that cleanly
+  unregisters the icon.
 - **Linux**: works under X11. Wayland restricts global key listening and
   synthetic typing for security reasons, so `pynput` may not work there
   without extra setup (e.g. running under XWayland or using `ydotool`). The

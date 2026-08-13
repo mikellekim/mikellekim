@@ -71,7 +71,14 @@ class TrayApp:
         # writes to self.icon. Building the icon first (and keeping
         # _build_menu from touching self.dictation) avoids that ordering bug.
         self.icon = pystray.Icon(
-            name="wispr-flow-clone",
+            # Renamed from "wispr-flow-clone": real-world testing found
+            # Windows can leave a stale/zombie tray icon cache entry for a
+            # name whose owning process was killed abruptly (Ctrl+C never
+            # calls Shell_NotifyIcon(NIM_DELETE) to unregister it cleanly),
+            # which silently blocks that identity from ever rendering an
+            # icon again regardless of what the code does. A fresh, never-
+            # before-used name sidesteps any such poisoned cache entry.
+            name="wispr-flow-clone-tray",
             icon=make_icon_image(STATE_COLORS["idle"]),
             title="Dictation: idle",
             menu=self._build_menu(),
