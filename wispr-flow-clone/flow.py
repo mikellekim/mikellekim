@@ -14,7 +14,7 @@ import platform
 import re
 import sys
 import threading
-from collections import Counter
+from itertools import groupby
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -37,21 +37,27 @@ KEY_ALIASES = {
     "pause": keyboard.Key.pause,
 }
 
-HALLUCINATION_MIN_WORDS = 4
-HALLUCINATION_REPEAT_RATIO = 0.4
+HALLUCINATION_RUN_THRESHOLD = 3
 
 
 def is_likely_hallucination(text: str) -> bool:
     """Whisper occasionally locks onto the wrong language on ambiguous or
-    quiet audio and loops the same word/phrase - a well-known failure mode,
-    not a bug in this project. Flag transcripts dominated by one repeated
+    quiet audio and loops the same word/phrase back-to-back with nothing
+    else in between - a well-known failure mode, not a bug in this
+    project. Flag transcripts with a long unbroken run of one repeated
     word so they can be discarded instead of typed/logged as if real.
+
+    Deliberately checks consecutive runs rather than overall word
+    frequency: ordinary speech can legitimately repeat a word a few times
+    scattered through a sentence (e.g. a mic check like "testing, testing,
+    1, 2, 3, I said testing, testing"), but real hallucination loops
+    produce the same word several times in an unbroken row.
     """
     words = re.findall(r"[\w']+", text.lower())
-    if len(words) < HALLUCINATION_MIN_WORDS:
+    if not words:
         return False
-    _, count = Counter(words).most_common(1)[0]
-    return count >= 3 and count / len(words) >= HALLUCINATION_REPEAT_RATIO
+    longest_run = max(len(list(group)) for _, group in groupby(words))
+    return longest_run >= HALLUCINATION_RUN_THRESHOLD
 
 
 class Dictation:
