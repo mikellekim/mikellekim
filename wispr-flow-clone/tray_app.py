@@ -112,7 +112,15 @@ class TrayApp:
             on_press=self.dictation.on_press, on_release=self.dictation.on_release
         )
         listener.start()
-        self.icon.run()  # blocks; must be called on the main thread (required on macOS)
+
+        def setup(icon):
+            # Some pystray backends don't reliably default to visible on
+            # their own - explicitly setting it is the documented-safe way
+            # to make sure the icon actually renders.
+            icon.visible = True
+            print("Tray icon should now be visible in the system tray.")
+
+        self.icon.run(setup=setup)  # blocks; must run on the main thread (required on macOS)
 
 
 def build_arg_parser():
