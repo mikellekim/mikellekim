@@ -90,6 +90,7 @@ class Dictation:
         self._frames: List[np.ndarray] = []
         self._stream: Optional[sd.InputStream] = None
         self._lock = threading.Lock()
+        self._processing_lock = threading.Lock()
 
         print("Ready. Hold the hotkey to record, release to transcribe and type.")
         self._set_state("idle")
@@ -143,34 +144,47 @@ class Dictation:
             self._set_state("idle")
             return
 
-        print(f" transcribing {duration:.1f}s...", end="", flush=True)
-        self._set_state("transcribing")
-        segments, _ = self.model.transcribe(audio, language=self.language, beam_size=5)
-        raw_text = "".join(segment.text for segment in segments).strip()
-        if not raw_text:
-            print(" (empty)")
+        # Transcription/typing runs off this thread deliberately: this method
+        # is invoked directly from pynput's OS-level keyboard hook callback,
+        # and Windows can decide a slow low-level hook is unresponsive and
+        # start misdelivering events - which manifested as corrupted/
+        # interleaved typed text when two dictations happened close together.
+        threading.Thread(target=self._process_audio, args=(audio, duration), daemon=True).start()
+
+    def _process_audio(self, audio: np.ndarray, duration: float):
+        # Serialized so two overlapping dictations transcribe/type one at a
+        # time instead of racing and interleaving keystrokes.
+        with self._processing_lock:
+            print(f" transcribing {duration:.1f}s...", end="", flush=True)
+            self._set_state("transcribing")
+            segments, _ = self.model.transcribe(audio, language=self.language, beam_size=5)
+            raw_text = "".join(segment.text for segment in segments).strip()
+            if not raw_text:
+                print(" (empty)")
+                self._set_state("idle")
+                return
+            if is_likely_hallucination(raw_text):
+                print(f" -> {raw_text!r} (looks like a Whisper hallucination, discarded)")
+                self._set_state("idle")
+                return
+            print(f" -> {raw_text!r}", end="")
+
+            text = cleanup_text(
+                raw_text,
+                self.cleanup_backend,
+                ollama_model=self.ollama_model,
+                anthropic_api_key=self.anthropic_api_key,
+            )
+            print(f" | cleaned -> {text!r}" if text != raw_text else "")
+
+            if self.history_enabled:
+                history.append_entry(
+                    raw_text, text, duration, self.cleanup_backend, path=self.history_path
+                )
+
+            if text:
+                self._emit(text)
             self._set_state("idle")
-            return
-        if is_likely_hallucination(raw_text):
-            print(f" -> {raw_text!r} (looks like a Whisper hallucination, discarded)")
-            self._set_state("idle")
-            return
-        print(f" -> {raw_text!r}", end="")
-
-        text = cleanup_text(
-            raw_text,
-            self.cleanup_backend,
-            ollama_model=self.ollama_model,
-            anthropic_api_key=self.anthropic_api_key,
-        )
-        print(f" | cleaned -> {text!r}" if text != raw_text else "")
-
-        if self.history_enabled:
-            history.append_entry(raw_text, text, duration, self.cleanup_backend, path=self.history_path)
-
-        if text:
-            self._emit(text)
-        self._set_state("idle")
 
     def _emit(self, text: str):
         if self.paste_mode:
