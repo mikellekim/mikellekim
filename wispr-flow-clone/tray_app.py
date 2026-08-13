@@ -51,6 +51,17 @@ def make_icon_image(color) -> Image.Image:
 class TrayApp:
     def __init__(self, args):
         self.args = args
+        # self.icon must exist before Dictation() is constructed: Dictation
+        # fires an initial "idle" state-change callback as the last step of
+        # its own __init__, and that callback (_on_state_change below)
+        # writes to self.icon. Building the icon first (and keeping
+        # _build_menu from touching self.dictation) avoids that ordering bug.
+        self.icon = pystray.Icon(
+            name="wispr-flow-clone",
+            icon=make_icon_image(STATE_COLORS["idle"]),
+            title="Dictation: idle",
+            menu=self._build_menu(),
+        )
         hotkey = KEY_ALIASES[args.hotkey]
         self.dictation = Dictation(
             args.model,
@@ -63,12 +74,6 @@ class TrayApp:
             history_enabled=not args.no_history,
             history_path=Path(args.history_path) if args.history_path else None,
         )
-        self.icon = pystray.Icon(
-            name="wispr-flow-clone",
-            icon=make_icon_image(STATE_COLORS["idle"]),
-            title="Dictation: idle",
-            menu=self._build_menu(),
-        )
 
     def _build_menu(self) -> pystray.Menu:
         return pystray.Menu(
@@ -79,7 +84,9 @@ class TrayApp:
             pystray.MenuItem(
                 "Launch at Login", self._toggle_autostart, checked=lambda item: autostart.is_enabled()
             ),
-            pystray.MenuItem("Open History Log", self._open_history, enabled=self.dictation.history_enabled),
+            pystray.MenuItem(
+                "Open History Log", self._open_history, enabled=not self.args.no_history
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._quit),
         )
