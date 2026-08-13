@@ -26,10 +26,11 @@ from flow import build_arg_parser as build_flow_arg_parser
 _AUTOSTART_MANAGEMENT_FLAGS = {"--enable-autostart", "--disable-autostart", "--autostart-status"}
 
 ICON_SIZE = 64
+ICON_BACKGROUND = (32, 32, 32)
 STATE_COLORS = {
-    "idle": (130, 130, 130, 255),
-    "recording": (220, 50, 50, 255),
-    "transcribing": (230, 160, 30, 255),
+    "idle": (130, 130, 130),
+    "recording": (220, 50, 50),
+    "transcribing": (230, 160, 30),
 }
 
 
@@ -41,7 +42,11 @@ def _persisted_args() -> list:
 
 
 def make_icon_image(color) -> Image.Image:
-    image = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
+    # Opaque RGB, not transparent RGBA: testing found a transparent-background
+    # icon silently failed to render on Windows (no error, just invisible),
+    # while an opaque image - confirmed via a minimal pystray reproduction -
+    # displayed correctly.
+    image = Image.new("RGB", (ICON_SIZE, ICON_SIZE), ICON_BACKGROUND)
     draw = ImageDraw.Draw(image)
     margin = ICON_SIZE // 8
     draw.ellipse((margin, margin, ICON_SIZE - margin, ICON_SIZE - margin), fill=color)
