@@ -50,6 +50,17 @@ It still opens a console window so you can see the transcript/cleanup log
 like before; the window closes on its own only if you close it (a `pause`
 at the end keeps it open if something errors, so you can read why).
 
+By default the shortcut gets a generic `.bat` file icon. To give it a
+proper custom icon (`assets/app_icon.ico`, a mic glyph):
+
+1. Right-click the desktop shortcut > **Properties**.
+2. On the **Shortcut** tab, click **Change Icon...**.
+3. If Windows warns the file has no icons, click **OK** to browse anyway.
+4. Click **Browse...**, navigate to `wispr-flow-clone\assets\app_icon.ico`,
+   select it, then **OK** > **OK**.
+
+The desktop icon updates immediately.
+
 Options:
 
 ```bash
