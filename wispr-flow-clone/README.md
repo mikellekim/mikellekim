@@ -136,8 +136,13 @@ whatever you were typing into. If you hit this often, try `--language en`
 - **macOS**: grant your terminal (or the packaged app, if you build one)
   Accessibility and Microphone permissions in System Settings > Privacy &
   Security, or the hotkey/typing won't work.
-- **Windows**: should work out of the box; run from an elevated terminal if
-  the hotkey doesn't register in some apps.
+- **Windows**: should work out of the box. If the real Wispr Flow app (or
+  any other tool with its own global hotkey) is running, it can compete
+  for the same hotkey and cause flaky, hard-to-explain behavior - quit it
+  before testing. Typing won't reach a window running elevated ("Run as
+  Administrator") unless this script is also run elevated - that's
+  Windows' own UIPI security boundary blocking lower-privilege processes
+  from injecting input into higher-privilege windows, not a bug here.
 - **Linux**: works under X11. Wayland restricts global key listening and
   synthetic typing for security reasons, so `pynput` may not work there
   without extra setup (e.g. running under XWayland or using `ydotool`). The
